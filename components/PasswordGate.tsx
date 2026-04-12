@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getSession, setSession } from '@/lib/store/auth-store';
 import { useSubscriptionSync } from '@/lib/hooks/useSubscriptionSync';
-import { settingsStore } from '@/lib/store/settings-store';
+import { hasStoredAppSetting, settingsStore } from '@/lib/store/settings-store';
 import { useIPTVStore } from '@/lib/store/iptv-store';
 import { Lock } from 'lucide-react';
 
@@ -53,6 +53,41 @@ function syncMergeSources(rawValue: string) {
     }
 }
 
+function syncDanmakuApiUrl(rawValue: string) {
+    if (!rawValue || hasStoredAppSetting('danmakuApiUrl')) return;
+
+    const settings = settingsStore.getSettings();
+    if (settings.danmakuApiUrl !== rawValue) {
+        settingsStore.saveSettings({
+            ...settings,
+            danmakuApiUrl: rawValue,
+        });
+    }
+}
+
+function applyRuntimeConfig(data: {
+    subscriptionSources?: string;
+    iptvSources?: string;
+    mergeSources?: string;
+    danmakuApiUrl?: string;
+}) {
+    if (data.subscriptionSources) {
+        settingsStore.syncEnvSubscriptions(data.subscriptionSources);
+    }
+
+    if (data.iptvSources) {
+        syncIPTVSources(data.iptvSources);
+    }
+
+    if (data.mergeSources) {
+        syncMergeSources(data.mergeSources);
+    }
+
+    if (data.danmakuApiUrl) {
+        syncDanmakuApiUrl(data.danmakuApiUrl);
+    }
+}
+
 export function PasswordGate({ children, hasAuth: initialHasAuth }: { children: React.ReactNode, hasAuth: boolean }) {
     // Enable background subscription syncing globally
     useSubscriptionSync();
@@ -90,21 +125,7 @@ export function PasswordGate({ children, hasAuth: initialHasAuth }: { children: 
                 if (mounted) {
                     setHasAuth(data.hasAuth);
                     setPersistSession(data.persistSession);
-
-                    // Sync subscriptions
-                    if (data.subscriptionSources) {
-                        settingsStore.syncEnvSubscriptions(data.subscriptionSources);
-                    }
-
-                    // Sync IPTV sources from env
-                    if (data.iptvSources) {
-                        syncIPTVSources(data.iptvSources);
-                    }
-
-                    // Sync merge sources setting from env
-                    if (data.mergeSources) {
-                        syncMergeSources(data.mergeSources);
-                    }
+                    applyRuntimeConfig(data);
 
                     // Re-evaluate lock status with confirmed server state
                     const confirmLocked = data.hasAuth && !isAuthenticated;
@@ -133,6 +154,7 @@ export function PasswordGate({ children, hasAuth: initialHasAuth }: { children: 
             const data = await res.json();
 
             if (data.valid) {
+                applyRuntimeConfig(data);
                 setSession({
                     profileId: data.profileId,
                     name: data.name,
